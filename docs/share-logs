@@ -1,3 +1,35 @@
 #!/bin/bash
+set -e
 
-echo "I just came to say hello"
+if [ "$1" != "-y" ]; then
+  echo "This script will share logs with OpenOps."
+  echo "Are you sure you want to continue? (y/n)"
+  read -r response < /dev/tty
+  if [ "$response" != "y" ]; then
+    exit 0
+  fi
+fi
+
+if [ -f docker-compose.yml ]; then
+  echo "Found docker-compose.yml"
+else
+  echo "Could not find docker-compose.yml, trying ~/openops"
+  cd ~/openops || exit 1
+  if [ -f docker-compose.yml ]; then
+    echo "Found docker-compose.yml"
+  else
+    echo "Could not find docker-compose.yml, exiting"
+    exit 1
+  fi
+fi
+
+echo "Writing logs to a file..."
+sudo docker-compose logs --no-color > logs.txt
+echo "Uploading logs to S3..."
+LOGS_FILE=$(date +%Y%m%d_%H%M%S).log
+curl -f -X PUT --upload-file logs.txt https://openops.s3.amazonaws.com/client-logs/$LOGS_FILE
+echo "Done. File uploaded to https://openops.s3.amazonaws.com/client-logs/$LOGS_FILE"
+echo "Please share the following file name with OpenOps: $LOGS_FILE"
+
+
+
