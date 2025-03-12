@@ -24,7 +24,7 @@ else
 fi
 
 echo "Writing logs to a file..."
-sudo docker-compose logs --no-color > logs.txt
+sudo docker-compose logs --timestamp --no-color > logs.txt
 echo "Uploading logs to S3..."
 LOGS_FILE=$(date +%Y%m%d_%H%M%S).log
 curl -f -X PUT --upload-file logs.txt https://openops.s3.amazonaws.com/client-logs/$LOGS_FILE
