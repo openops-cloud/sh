@@ -27,7 +27,7 @@ check_for_user_confirmation() {
 }
 
 generate_random_password() {
-  dd if=/dev/urandom bs=1 count=512 2>/dev/null | tr -dc '[:alnum:]' | cut -c -"${1:-16}"
+  dd if=/dev/urandom bs=1 count=512 2>/dev/null | LC_ALL=C tr -dc '[:alnum:]' | cut -c -"${1:-16}"
 }
 
 generate_random_hex() {
