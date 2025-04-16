@@ -36,9 +36,9 @@ generate_random_hex() {
 
 dockercmd () {
   if [ "$OS_TYPE" = "mac" ]; then
-    docker "$@"
+    COMPOSE_PARALLEL_LIMIT=2 docker "$@"
   else
-    sudo docker "$@"
+    sudo COMPOSE_PARALLEL_LIMIT=2 docker "$@"
   fi
 }
 
@@ -246,7 +246,7 @@ if [ ! -f .env ] && [ -f .env.defaults ]; then
         ;;
       OPS_ENCRYPTION_KEY=*)
         echo "OPS_ENCRYPTION_KEY=$(generate_random_hex)"
-        echo "Created a new encryption key" >&2
+        echo "Generated a new encryption key" >&2
         ;;
       *PASSWORD*=*|*JWT_SECRET*=*)
         var="${line%%=*}"
@@ -265,7 +265,7 @@ else
 fi
 
 headline "Pull docker images"
-COMPOSE_PARALLEL_LIMIT=2 dockercmd compose pull
+dockercmd compose pull
 
 headline "Run OpenOps"
 dockercmd compose up -d
