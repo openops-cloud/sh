@@ -6,9 +6,9 @@ set -eu
 
 INTERACTIVE=${INTERACTIVE:-true}
 REQUIRED_DOCKER_MAJOR=27
-OPENOPS_VERSION="0.2.5"
+OPENOPS_VERSION=${OPENOPS_VERSION:-"0.2.5"}
 OPENOPS_URL="https://github.com/openops-cloud/openops/releases/download/${OPENOPS_VERSION}/openops-dc-${OPENOPS_VERSION}.zip"
-INSTALL_DIR="$HOME/openops"
+INSTALL_DIR=${OPENOPS_INSTALLATION_PATH:-"$HOME/openops"}
 ZIP_FILE="$INSTALL_DIR/openops-dc-${OPENOPS_VERSION}.zip"
 
 headline_number=1
@@ -34,13 +34,19 @@ generate_random_hex() {
    dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -A none -t x1 | tr -d ' \n'
 }
 
+dockercmd () {
+  if [ "$OS_TYPE" = "mac" ]; then
+    docker "$@"
+  else
+    sudo docker "$@"
+  fi
+}
+
 echo
-echo "This script will install OpenOps Docker Compose deployment."
+echo "This script installs OpenOps (docker compose deployment) and required dependencies."
 echo
-echo "It will first verify the required dependencies and then download and run the latest OpenOps release."
-echo
-echo "Latest version:        $OPENOPS_VERSION"
-echo "Installation location: $INSTALL_DIR"
+echo "Release number:     $OPENOPS_VERSION"
+echo "Installation path:  $INSTALL_DIR"
 echo
 check_for_user_confirmation
 
@@ -87,7 +93,6 @@ detect_linux_family() {
   esac
 }
 
-# 1) Detect OS
 if [ "$KERNEL" = "Darwin" ]; then
   OS_TYPE="mac"
 else
@@ -110,7 +115,7 @@ fi
 
 headline "Install prerequisites"
 
-# Helper: parse major Docker version (e.g. "27" from "Docker version 27.0.1, build xyz")
+# Parse major Docker version (e.g. "27" from "Docker version 27.0.1, build xyz")
 check_docker_major_version() {
   # If Docker is missing, this prints nothing
   DOCKER_VERSION_STR="$(docker --version 2>/dev/null || true)"
@@ -122,8 +127,6 @@ check_docker_major_version() {
 
 install_docker_debian() {
   echo "Installing Docker on Debian-like..."
-  # (Minimal approach, for demonstration)
-  # Official instructions: https://docs.docker.com/engine/install/debian/
   sudo apt-get update -y
   sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
   curl -fsSL https://download.docker.com/linux/$(. /etc/os-release; echo "$ID")/gpg \
@@ -153,7 +156,6 @@ echo "Checking Docker..."
 DOCKER_MAJOR="$(check_docker_major_version)"
 
 if [ -z "$DOCKER_MAJOR" ] || [ "$DOCKER_MAJOR" -lt "$REQUIRED_DOCKER_MAJOR" ]; then
-  # Not installed or version too old
   if [ "$OS_TYPE" = "mac" ]; then
     if command -v brew >/dev/null 2>&1; then
       brew install docker
@@ -244,12 +246,12 @@ if [ ! -f .env ] && [ -f .env.defaults ]; then
         ;;
       OPS_ENCRYPTION_KEY=*)
         echo "OPS_ENCRYPTION_KEY=$(generate_random_hex)"
-        echo "Created new encryption key" >&2
+        echo "Created a new encryption key" >&2
         ;;
       *PASSWORD*=*|*JWT_SECRET*=*)
         var="${line%%=*}"
         echo "$var=$(generate_random_password)"
-        echo "Generated new password for $var" >&2
+        echo "Generated a new password for $var" >&2
         ;;
       *)
         echo "$line"
@@ -259,14 +261,14 @@ if [ ! -f .env ] && [ -f .env.defaults ]; then
   echo "Created a .env file."
 else
   headline "Stop existing containers"
-  sudo docker compose down
+  dockercmd compose down
 fi
 
 headline "Pull docker images"
-sudo COMPOSE_PARALLEL_LIMIT=2 docker compose pull
+COMPOSE_PARALLEL_LIMIT=2 dockercmd compose pull
 
 headline "Run OpenOps"
-sudo docker compose up -d
+dockercmd compose up -d
 
 echo
 echo "Done!"
