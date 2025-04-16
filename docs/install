@@ -199,7 +199,7 @@ if [ ! -f .env ] && [ -f .env.defaults ]; then
     case "$line" in
       OPS_PUBLIC_URL=*)
         # If it's a remote session, use a public IP
-        if [ "$SSH_CLIENT" ]; then
+        if [ "${SSH_CLIENT-}" ]; then
           echo "Remote session detected, using public IP address" >&2
           if command -v curl >/dev/null 2>&1; then
             ip=$(curl -s https://api.ipify.org)
@@ -226,7 +226,7 @@ if [ ! -f .env ] && [ -f .env.defaults ]; then
         ;;
     esac
   done < .env > .env.tmp && mv .env.tmp .env
-  echo "Created .env from .env.defaults."
+  echo "Created a .env file."
 else
   headline "Stop existing containers"
   sudo docker compose down
