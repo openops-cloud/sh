@@ -246,7 +246,7 @@ if [ ! -f .env ] && [ -f .env.defaults ]; then
         echo "OPS_ENCRYPTION_KEY=$(generate_random_hex)"
         echo "Created new encryption key" >&2
         ;;
-      *PASSWORD*=*|*SECRET*=*)
+      *PASSWORD*=*|*JWT_SECRET*=*)
         var="${line%%=*}"
         echo "$var=$(generate_random_password)"
         echo "Generated new password for $var" >&2
