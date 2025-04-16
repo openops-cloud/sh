@@ -155,9 +155,13 @@ DOCKER_MAJOR="$(check_docker_major_version)"
 if [ -z "$DOCKER_MAJOR" ] || [ "$DOCKER_MAJOR" -lt "$REQUIRED_DOCKER_MAJOR" ]; then
   # Not installed or version too old
   if [ "$OS_TYPE" = "mac" ]; then
-    echo "Docker version ${REQUIRED_DOCKER_MAJOR}+ required, but cannot auto-install on macOS."
-    echo "Please install/update Docker Desktop from: https://www.docker.com/products/docker-desktop"
-    exit 1
+    if command -v brew >/dev/null 2>&1; then
+      brew install docker
+    else
+      echo "Docker version ${REQUIRED_DOCKER_MAJOR}+ required, but cannot auto-install on macOS."
+      echo "Please install/update Docker Desktop from: https://www.docker.com/products/docker-desktop"
+      exit 1
+    fi
   elif [ "$OS_TYPE" = "fedora" ]; then
     install_docker_fedora
   else
