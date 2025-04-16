@@ -263,7 +263,7 @@ else
 fi
 
 headline "Pull docker images"
-sudo COMPOSE_PARALLEL_LIMIT=2 docker compose pull -q
+sudo COMPOSE_PARALLEL_LIMIT=2 docker compose pull
 
 headline "Run OpenOps"
 sudo docker compose up -d
