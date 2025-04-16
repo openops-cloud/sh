@@ -96,6 +96,19 @@ fi
 
 echo "OS type detected: $OS_TYPE"
 
+headline "Verify sudo access"
+
+if sudo -n true 2>/dev/null; then
+  echo "sudo is available and does not require a password."
+else
+  echo "sudo requires a password. Please enter it now..." >&2
+  # 3) Prompt the user (plain sudo will ask if needed)
+  if ! sudo true; then
+    echo "Authentication with sudo failed." >&2
+    exit 1
+  fi
+fi
+
 headline "Install prerequisites"
 
 # Helper: parse major Docker version (e.g. "27" from "Docker version 27.0.1, build xyz")
