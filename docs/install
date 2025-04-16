@@ -127,10 +127,8 @@ install_docker_debian() {
 install_docker_fedora() {
   echo "Installing Docker on Fedora-like..."
   sudo dnf install -y dnf-plugins-core
-  # Below command might differ for RHEL/CentOS vs. Fedora, but let's keep it simple
-  sudo dnf config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo || true
-  sudo dnf install -y docker-ce docker-ce-cli containerd.io \
-                     docker-buildx-plugin docker-compose-plugin
+  sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo || true
+  sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   sudo systemctl enable docker || true
   sudo systemctl start docker || true
 }
@@ -202,11 +200,13 @@ if [ ! -f .env ] && [ -f .env.defaults ]; then
       OPS_PUBLIC_URL=*)
         # If it's a remote session, use a public IP
         if [ "$SSH_CLIENT" ]; then
+          echo "Remote session detected, using public IP address" >&2
           if command -v curl >/dev/null 2>&1; then
             ip=$(curl -s https://api.ipify.org)
           elif command -v wget >/dev/null 2>&1; then
             ip=$(wget -qO - https://api.ipify.org)
           fi
+          echo "Detected public IP: $ip" >&2
           echo "OPS_PUBLIC_URL=http://$ip"
         else
           echo "$line"
@@ -214,10 +214,12 @@ if [ ! -f .env ] && [ -f .env.defaults ]; then
         ;;
       OPS_ENCRYPTION_KEY=*)
         echo "OPS_ENCRYPTION_KEY=$(generate_random_password 32)"
+        echo "Created new encryption key" >&2
         ;;
       *PASSWORD*=*|*SECRET*=*)
         var="${line%%=*}"
         echo "$var=$(generate_random_password)"
+        echo "Generated new password for $var" >&2
         ;;
       *)
         echo "$line"
