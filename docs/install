@@ -30,6 +30,10 @@ generate_random_password() {
   dd if=/dev/urandom bs=1 count=512 2>/dev/null | tr -dc '[:alnum:]' | cut -c -"${1:-16}"
 }
 
+generate_random_hex() {
+   dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -A none -t x1 | tr -d ' \n'
+}
+
 echo
 echo "This script will install OpenOps Docker Compose deployment."
 echo
@@ -213,7 +217,7 @@ if [ ! -f .env ] && [ -f .env.defaults ]; then
         fi
         ;;
       OPS_ENCRYPTION_KEY=*)
-        echo "OPS_ENCRYPTION_KEY=$(generate_random_password 32)"
+        echo "OPS_ENCRYPTION_KEY=$(generate_random_hex)"
         echo "Created new encryption key" >&2
         ;;
       *PASSWORD*=*|*SECRET*=*)
