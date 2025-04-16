@@ -102,7 +102,6 @@ if sudo -n true 2>/dev/null; then
   echo "sudo is available and does not require a password."
 else
   echo "sudo requires a password. Please enter it now..." >&2
-  # 3) Prompt the user (plain sudo will ask if needed)
   if ! sudo true; then
     echo "Authentication with sudo failed." >&2
     exit 1
@@ -168,11 +167,21 @@ else
   echo "Docker version is >= ${REQUIRED_DOCKER_MAJOR} (major version: $DOCKER_MAJOR). OK."
 fi
 
+if [ "$OS_TYPE" = "mac" ]; then
+  echo "Checking Rosetta..."
+  if ! pkgutil --files com.apple.pkg.RosettaUpdateAuto >/dev/null 2>&1; then
+    echo "Rosetta not found. Installing now..." >&2
+    softwareupdate --install-rosetta --agree-to-license
+  else
+    echo "Rosetta is already installed." >&2
+  fi
+fi
+
 # Ensure Docker is running on Linux
 if [ "$OS_TYPE" != "mac" ]; then
   if command -v systemctl >/dev/null 2>&1; then
     if ! sudo systemctl is-active --quiet docker; then
-      echo "=== Starting Docker service..."
+      echo "Starting Docker service..."
       sudo systemctl start docker || true
     fi
   fi
