@@ -1,9 +1,15 @@
-#!/bin/sh
-# POSIX-compliant
-# Installs/updates Docker (if needed), downloads and unpacks OpenOps release, and starts it via Docker Compose.
+#!/bin/bash
+#
+# OpenOps Installation Script
+# 
+# This script installs or updates OpenOps by:
+# - Installing/updating Docker if needed
+# - Downloading and unpacking the OpenOps release
+# - Starting OpenOps via Docker Compose
 
 set -eu
 
+# Configuration variables
 INTERACTIVE=${INTERACTIVE:-true}
 REQUIRED_DOCKER_MAJOR=27
 OPENOPS_VERSION=${OPENOPS_VERSION:-"0.2.10"}
@@ -12,30 +18,47 @@ INSTALL_DIR=${OPENOPS_INSTALLATION_PATH:-"$HOME/openops"}
 ZIP_FILE="$INSTALL_DIR/openops-dc-${OPENOPS_VERSION}.zip"
 
 headline_number=1
+
+# Print a section headline with sequential numbering
+# Args:
+#   $1: The headline text
 headline() {
   echo
   echo "========== ${headline_number}. $1 =========="
-  headline_number=$(($headline_number + 1))
+  headline_number=$((headline_number + 1))
 }
 
+# Prompt for user confirmation if interactive mode is enabled
+# No args
 check_for_user_confirmation() {
-  if [ "$INTERACTIVE" = "true" ]; then
+  if [[ "$INTERACTIVE" == "true" ]]; then
     printf "Press any key to continue, or Ctrl+C to exit..."
     echo
     exec 3<&0; exec 0</dev/tty; read -r answer; exec 0<&3
   fi
 }
 
+# Generate a random alphanumeric password
+# Args:
+#   $1: Length of the password (default: 16)
+# Returns:
+#   Random alphanumeric string of specified length
 generate_random_password() {
   dd if=/dev/urandom bs=1 count=512 2>/dev/null | LC_ALL=C tr -dc '[:alnum:]' | cut -c -"${1:-16}"
 }
 
+# Generate a random hex string
+# Returns:
+#   Random hex string
 generate_random_hex() {
    dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -A none -t x1 | tr -d ' \n'
 }
 
-dockercmd () {
-  if [ "$OS_TYPE" = "mac" ]; then
+# Execute docker commands with appropriate permissions
+# Args:
+#   $@: Docker command and arguments to pass through
+dockercmd() {
+  if [[ "$OS_TYPE" == "mac" ]]; then
     COMPOSE_PARALLEL_LIMIT=2 docker "$@"
   else
     sudo COMPOSE_PARALLEL_LIMIT=2 docker "$@"
@@ -56,15 +79,21 @@ KERNEL="$(uname -s 2>/dev/null || echo Unknown)"
 # We'll store OS_TYPE as one of "mac", "debian", or "fedora"
 OS_TYPE=""
 
-# Function: parse /etc/os-release to guess Debian vs. Fedora
+# Detect Linux distribution family (Debian or Fedora-like)
+# Sets global variable OS_TYPE
 detect_linux_family() {
-  if [ ! -f /etc/os-release ]; then
+  if [[ ! -f /etc/os-release ]]; then
     echo "Cannot find /etc/os-release; defaulting to Debian-like." 1>&2
     OS_TYPE="debian"
     return
   fi
 
   # Extract ID= and ID_LIKE= lines
+  local ID_LINE
+  local ID_LIKE_LINE
+  local ID_VAL
+  local ID_LIKE_VAL
+  
   ID_LINE="$(grep '^ID=' /etc/os-release 2>/dev/null | head -n1 || true)"
   ID_LIKE_LINE="$(grep '^ID_LIKE=' /etc/os-release 2>/dev/null | head -n1 || true)"
 
@@ -93,7 +122,7 @@ detect_linux_family() {
   esac
 }
 
-if [ "$KERNEL" = "Darwin" ]; then
+if [[ "$KERNEL" == "Darwin" ]]; then
   OS_TYPE="mac"
 else
   detect_linux_family
@@ -116,8 +145,11 @@ fi
 headline "Install prerequisites"
 
 # Parse major Docker version (e.g. "27" from "Docker version 27.0.1, build xyz")
+# Returns:
+#   Major version number or empty if Docker is not installed
 check_docker_major_version() {
   # If Docker is missing, this prints nothing
+  local DOCKER_VERSION_STR
   DOCKER_VERSION_STR="$(docker --version 2>/dev/null || true)"
   # Example: "Docker version 27.0.1, build abcdef"
   # We'll use sed to extract the first number after "Docker version "
@@ -125,6 +157,7 @@ check_docker_major_version() {
   echo "$DOCKER_VERSION_STR" | sed -n 's/^Docker version \([0-9][0-9]*\)\..*/\1/p'
 }
 
+# Install Docker on Debian-based systems
 install_docker_debian() {
   echo "Installing Docker on Debian-like..."
   sudo apt-get update -y
@@ -143,6 +176,7 @@ install_docker_debian() {
   sudo systemctl start docker || true
 }
 
+# Install Docker on Fedora-based systems
 install_docker_fedora() {
   echo "Installing Docker on Fedora-like..."
   sudo dnf install -y dnf-plugins-core
@@ -155,8 +189,8 @@ install_docker_fedora() {
 echo "Checking Docker..."
 DOCKER_MAJOR="$(check_docker_major_version)"
 
-if [ -z "$DOCKER_MAJOR" ] || [ "$DOCKER_MAJOR" -lt "$REQUIRED_DOCKER_MAJOR" ]; then
-  if [ "$OS_TYPE" = "mac" ]; then
+if [[ -z "$DOCKER_MAJOR" ]] || [[ "$DOCKER_MAJOR" -lt "$REQUIRED_DOCKER_MAJOR" ]]; then
+  if [[ "$OS_TYPE" == "mac" ]]; then
     if command -v brew >/dev/null 2>&1; then
       brew install docker
     else
@@ -164,7 +198,7 @@ if [ -z "$DOCKER_MAJOR" ] || [ "$DOCKER_MAJOR" -lt "$REQUIRED_DOCKER_MAJOR" ]; t
       echo "Please install/update Docker Desktop from: https://www.docker.com/products/docker-desktop"
       exit 1
     fi
-  elif [ "$OS_TYPE" = "fedora" ]; then
+  elif [[ "$OS_TYPE" == "fedora" ]]; then
     install_docker_fedora
   else
     install_docker_debian
@@ -173,7 +207,7 @@ else
   echo "Docker version is >= ${REQUIRED_DOCKER_MAJOR} (major version: $DOCKER_MAJOR). OK."
 fi
 
-if [ "$OS_TYPE" = "mac" ]; then
+if [[ "$OS_TYPE" == "mac" ]]; then
   echo "Checking Rosetta..."
   if ! pkgutil --files com.apple.pkg.RosettaUpdateAuto >/dev/null 2>&1; then
     echo "Rosetta not found. Installing now..." >&2
@@ -184,7 +218,7 @@ if [ "$OS_TYPE" = "mac" ]; then
 fi
 
 # Ensure Docker is running on Linux
-if [ "$OS_TYPE" != "mac" ]; then
+if [[ "$OS_TYPE" != "mac" ]]; then
   if command -v systemctl >/dev/null 2>&1; then
     if ! sudo systemctl is-active --quiet docker; then
       echo "Starting Docker service..."
@@ -202,19 +236,19 @@ if command -v curl >/dev/null 2>&1; then
 elif command -v wget >/dev/null 2>&1; then
   wget -O "$ZIP_FILE" "$OPENOPS_URL"
 else
-  echo "Error: Neither curl nor wget found. Please install one of them and re-run."
+  echo "Error: Neither curl nor wget found. Please install one of them and re-run." >&2
   exit 1
 fi
 
-# 3) Unzip into ~/openops (install 'unzip' if missing)
+# Unzip the downloaded file (install 'unzip' if missing)
 echo "Unzipping..."
 
 if ! command -v unzip >/dev/null 2>&1; then
-  echo "Unzip not found. Installing..."
-  if [ "$OS_TYPE" = "mac" ]; then
-    echo "On macOS, please install unzip (e.g. brew install unzip) or open the zip manually."
+  echo "Unzip not found. Installing..." >&2
+  if [[ "$OS_TYPE" == "mac" ]]; then
+    echo "On macOS, please install unzip (e.g. brew install unzip) or open the zip manually." >&2
     exit 1
-  elif [ "$OS_TYPE" = "fedora" ]; then
+  elif [[ "$OS_TYPE" == "fedora" ]]; then
     sudo dnf install -y unzip
   else
     sudo apt-get update -y
@@ -224,14 +258,14 @@ fi
 
 unzip -o "openops-dc-${OPENOPS_VERSION}.zip"
 
-if [ ! -f .env ] && [ -f .env.defaults ]; then
+if [[ ! -f .env ]] && [[ -f .env.defaults ]]; then
   headline "Generate configuration file .env"
   cp .env.defaults .env
   while IFS= read -r line; do
     case "$line" in
       OPS_PUBLIC_URL=*)
         # If it's a remote session, use a public IP
-        if [ "${SSH_CLIENT-}" ]; then
+        if [[ "${SSH_CLIENT-}" ]]; then
           echo "Remote session detected, using public IP address" >&2
           if command -v curl >/dev/null 2>&1; then
             ip=$(curl -s https://api.ipify.org)
