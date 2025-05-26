@@ -54,31 +54,6 @@ generate_random_hex() {
    dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -A none -t x1 | tr -d ' \n'
 }
 
-# Execute docker commands with appropriate permissions
-# Args:
-#   $@: Docker command and arguments to pass through
-dockercmd() {
-  if [[ "$OS_TYPE" == "mac" ]]; then
-    COMPOSE_PARALLEL_LIMIT=2 docker "$@"
-  else
-    sudo COMPOSE_PARALLEL_LIMIT=2 docker "$@"
-  fi
-}
-
-echo
-echo "This script installs OpenOps (docker compose deployment) and required dependencies."
-echo
-echo "Release number:     $OPENOPS_VERSION"
-echo "Installation path:  $INSTALL_DIR"
-echo
-check_for_user_confirmation
-
-headline "Detect OS"
-KERNEL="$(uname -s 2>/dev/null || echo Unknown)"
-
-# We'll store OS_TYPE as one of "mac", "debian", or "fedora"
-OS_TYPE=""
-
 # Detect Linux distribution family (Debian or Fedora-like)
 # Sets global variable OS_TYPE
 detect_linux_family() {
@@ -122,27 +97,24 @@ detect_linux_family() {
   esac
 }
 
-if [[ "$KERNEL" == "Darwin" ]]; then
-  OS_TYPE="mac"
-else
-  detect_linux_family
-fi
-
-echo "OS type detected: $OS_TYPE"
-
-headline "Verify sudo access"
-
-if sudo -n true 2>/dev/null; then
-  echo "sudo is available and does not require a password."
-else
-  echo "sudo requires a password. Please enter it now..." >&2
-  if ! sudo true; then
-    echo "Authentication with sudo failed." >&2
-    exit 1
+# Execute docker commands with appropriate permissions
+# Args:
+#   $@: Docker command and arguments to pass through
+dockercmd() {
+  if [[ "$OS_TYPE" == "mac" ]]; then
+    COMPOSE_PARALLEL_LIMIT=2 docker "$@"
+  else
+    sudo COMPOSE_PARALLEL_LIMIT=2 docker "$@"
   fi
-fi
+}
 
-headline "Install prerequisites"
+echo
+echo "This script installs OpenOps (docker compose deployment) and required dependencies."
+echo
+echo "Release number:     $OPENOPS_VERSION"
+echo "Installation path:  $INSTALL_DIR"
+echo
+check_for_user_confirmation
 
 # Parse major Docker version (e.g. "27" from "Docker version 27.0.1, build xyz")
 # Returns:
@@ -186,129 +158,171 @@ install_docker_fedora() {
   sudo systemctl start docker || true
 }
 
-echo "Checking Docker..."
-DOCKER_MAJOR="$(check_docker_major_version)"
+# Main function
+main() {
+  echo
+  echo "This script installs OpenOps (docker compose deployment) and required dependencies."
+  echo
+  echo "Release number:     $OPENOPS_VERSION"
+  echo "Installation path:  $INSTALL_DIR"
+  echo
+  check_for_user_confirmation
 
-if [[ -z "$DOCKER_MAJOR" ]] || [[ "$DOCKER_MAJOR" -lt "$REQUIRED_DOCKER_MAJOR" ]]; then
-  if [[ "$OS_TYPE" == "mac" ]]; then
-    if command -v brew >/dev/null 2>&1; then
-      brew install docker
-    else
-      echo "Docker version ${REQUIRED_DOCKER_MAJOR}+ required, but cannot auto-install on macOS."
-      echo "Please install/update Docker Desktop from: https://www.docker.com/products/docker-desktop"
+  headline "Detect OS"
+  KERNEL="$(uname -s 2>/dev/null || echo Unknown)"
+
+  # We'll store OS_TYPE as one of "mac", "debian", or "fedora"
+  OS_TYPE=""
+
+  if [[ "$KERNEL" == "Darwin" ]]; then
+    OS_TYPE="mac"
+  else
+    detect_linux_family
+  fi
+
+  echo "OS type detected: $OS_TYPE"
+
+  headline "Verify sudo access"
+
+  if sudo -n true 2>/dev/null; then
+    echo "sudo is available and does not require a password."
+  else
+    echo "sudo requires a password. Please enter it now..." >&2
+    if ! sudo true; then
+      echo "Authentication with sudo failed." >&2
       exit 1
     fi
-  elif [[ "$OS_TYPE" == "fedora" ]]; then
-    install_docker_fedora
-  else
-    install_docker_debian
   fi
-else
-  echo "Docker version is >= ${REQUIRED_DOCKER_MAJOR} (major version: $DOCKER_MAJOR). OK."
-fi
 
-if [[ "$OS_TYPE" == "mac" ]]; then
-  echo "Checking Rosetta..."
-  if ! pkgutil --files com.apple.pkg.RosettaUpdateAuto >/dev/null 2>&1; then
-    echo "Rosetta not found. Installing now..." >&2
-    softwareupdate --install-rosetta --agree-to-license
+  headline "Install prerequisites"
+
+  echo "Checking Docker..."
+  DOCKER_MAJOR="$(check_docker_major_version)"
+
+  if [[ -z "$DOCKER_MAJOR" ]] || [[ "$DOCKER_MAJOR" -lt "$REQUIRED_DOCKER_MAJOR" ]]; then
+    if [[ "$OS_TYPE" == "mac" ]]; then
+      if command -v brew >/dev/null 2>&1; then
+        brew install docker
+      else
+        echo "Docker version ${REQUIRED_DOCKER_MAJOR}+ required, but cannot auto-install on macOS."
+        echo "Please install/update Docker Desktop from: https://www.docker.com/products/docker-desktop"
+        exit 1
+      fi
+    elif [[ "$OS_TYPE" == "fedora" ]]; then
+      install_docker_fedora
+    else
+      install_docker_debian
+    fi
   else
-    echo "Rosetta is already installed." >&2
+    echo "Docker version is >= ${REQUIRED_DOCKER_MAJOR} (major version: $DOCKER_MAJOR). OK."
   fi
-fi
 
-# Ensure Docker is running on Linux
-if [[ "$OS_TYPE" != "mac" ]]; then
-  if command -v systemctl >/dev/null 2>&1; then
-    if ! sudo systemctl is-active --quiet docker; then
-      echo "Starting Docker service..."
-      sudo systemctl start docker || true
+  if [[ "$OS_TYPE" == "mac" ]]; then
+    echo "Checking Rosetta..."
+    if ! pkgutil --files com.apple.pkg.RosettaUpdateAuto >/dev/null 2>&1; then
+      echo "Rosetta not found. Installing now..." >&2
+      softwareupdate --install-rosetta --agree-to-license
+    else
+      echo "Rosetta is already installed." >&2
     fi
   fi
-fi
 
-headline "Download and extract OpenOps release files"
-mkdir -p "$INSTALL_DIR" && cd "$INSTALL_DIR"
-
-# Use curl or wget, whichever is available
-if command -v curl >/dev/null 2>&1; then
-  curl -fSL "$OPENOPS_URL" -o "$ZIP_FILE"
-elif command -v wget >/dev/null 2>&1; then
-  wget -O "$ZIP_FILE" "$OPENOPS_URL"
-else
-  echo "Error: Neither curl nor wget found. Please install one of them and re-run." >&2
-  exit 1
-fi
-
-# Unzip the downloaded file (install 'unzip' if missing)
-echo "Unzipping..."
-
-if ! command -v unzip >/dev/null 2>&1; then
-  echo "Unzip not found. Installing..." >&2
-  if [[ "$OS_TYPE" == "mac" ]]; then
-    echo "On macOS, please install unzip (e.g. brew install unzip) or open the zip manually." >&2
-    exit 1
-  elif [[ "$OS_TYPE" == "fedora" ]]; then
-    sudo dnf install -y unzip
-  else
-    sudo apt-get update -y
-    sudo apt-get install -y unzip
+  # Ensure Docker is running on Linux
+  if [[ "$OS_TYPE" != "mac" ]]; then
+    if command -v systemctl >/dev/null 2>&1; then
+      if ! sudo systemctl is-active --quiet docker; then
+        echo "Starting Docker service..."
+        sudo systemctl start docker || true
+      fi
+    fi
   fi
-fi
 
-unzip -o "openops-dc-${OPENOPS_VERSION}.zip"
+  headline "Download and extract OpenOps release files"
+  mkdir -p "$INSTALL_DIR" && cd "$INSTALL_DIR"
 
-if [[ ! -f .env ]] && [[ -f .env.defaults ]]; then
-  headline "Generate configuration file .env"
-  cp .env.defaults .env
-  while IFS= read -r line; do
-    case "$line" in
-      OPS_PUBLIC_URL=*)
-        # If it's a remote session, use a public IP
-        if [[ "${SSH_CLIENT-}" ]]; then
-          echo "Remote session detected, using public IP address" >&2
-          if command -v curl >/dev/null 2>&1; then
-            ip=$(curl -s https://api.ipify.org)
-          elif command -v wget >/dev/null 2>&1; then
-            ip=$(wget -qO - https://api.ipify.org)
+  # Use curl or wget, whichever is available
+  if command -v curl >/dev/null 2>&1; then
+    curl -fSL "$OPENOPS_URL" -o "$ZIP_FILE"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -O "$ZIP_FILE" "$OPENOPS_URL"
+  else
+    echo "Error: Neither curl nor wget found. Please install one of them and re-run." >&2
+    exit 1
+  fi
+
+  # Unzip the downloaded file (install 'unzip' if missing)
+  echo "Unzipping..."
+
+  if ! command -v unzip >/dev/null 2>&1; then
+    echo "Unzip not found. Installing..." >&2
+    if [[ "$OS_TYPE" == "mac" ]]; then
+      echo "On macOS, please install unzip (e.g. brew install unzip) or open the zip manually." >&2
+      exit 1
+    elif [[ "$OS_TYPE" == "fedora" ]]; then
+      sudo dnf install -y unzip
+    else
+      sudo apt-get update -y
+      sudo apt-get install -y unzip
+    fi
+  fi
+
+  unzip -o "openops-dc-${OPENOPS_VERSION}.zip"
+
+  if [[ ! -f .env ]] && [[ -f .env.defaults ]]; then
+    headline "Generate configuration file .env"
+    cp .env.defaults .env
+    while IFS= read -r line; do
+      case "$line" in
+        OPS_PUBLIC_URL=*)
+          # If it's a remote session, use a public IP
+          if [[ "${SSH_CLIENT-}" ]]; then
+            echo "Remote session detected, using public IP address" >&2
+            if command -v curl >/dev/null 2>&1; then
+              ip=$(curl -s https://api.ipify.org)
+            elif command -v wget >/dev/null 2>&1; then
+              ip=$(wget -qO - https://api.ipify.org)
+            fi
+            echo "Detected public IP: $ip" >&2
+            echo "OPS_PUBLIC_URL=http://$ip"
+          else
+            echo "$line"
           fi
-          echo "Detected public IP: $ip" >&2
-          echo "OPS_PUBLIC_URL=http://$ip"
-        else
+          ;;
+        OPS_ENCRYPTION_KEY=*)
+          echo "OPS_ENCRYPTION_KEY=$(generate_random_hex)"
+          echo "Generated a new encryption key" >&2
+          ;;
+        *PASSWORD*=*|*JWT_SECRET*=*)
+          var="${line%%=*}"
+          echo "$var=$(generate_random_password)"
+          echo "Generated a new password for $var" >&2
+          ;;
+        *)
           echo "$line"
-        fi
-        ;;
-      OPS_ENCRYPTION_KEY=*)
-        echo "OPS_ENCRYPTION_KEY=$(generate_random_hex)"
-        echo "Generated a new encryption key" >&2
-        ;;
-      *PASSWORD*=*|*JWT_SECRET*=*)
-        var="${line%%=*}"
-        echo "$var=$(generate_random_password)"
-        echo "Generated a new password for $var" >&2
-        ;;
-      *)
-        echo "$line"
-        ;;
-    esac
-  done < .env > .env.tmp && mv .env.tmp .env
-  echo "Created a .env file."
-else
-  headline "Stop existing containers"
-  dockercmd compose down
-fi
+          ;;
+      esac
+    done < .env > .env.tmp && mv .env.tmp .env
+    echo "Created a .env file."
+  else
+    headline "Stop existing containers"
+    dockercmd compose down
+  fi
 
-headline "Pull docker images"
-dockercmd compose pull
+  headline "Pull docker images"
+  dockercmd compose pull
 
-headline "Run OpenOps"
-dockercmd compose up -d
+  headline "Run OpenOps"
+  dockercmd compose up -d
 
-echo
-echo "Done!"
-echo
-echo "OpenOps should now be up and running."
-echo "Application URL:    $(grep '^OPS_PUBLIC_URL=' .env | cut -d= -f2-)"
-echo "Admin Username:     $(grep '^OPS_OPENOPS_ADMIN_EMAIL=' .env | cut -d= -f2-)"
-echo "Admin Password:     $(grep '^OPS_OPENOPS_ADMIN_PASSWORD=' .env | cut -d= -f2-)"
-echo
+  echo
+  echo "Done!"
+  echo
+  echo "OpenOps should now be up and running."
+  echo "Application URL:    $(grep '^OPS_PUBLIC_URL=' .env | cut -d= -f2-)"
+  echo "Admin Username:     $(grep '^OPS_OPENOPS_ADMIN_EMAIL=' .env | cut -d= -f2-)"
+  echo "Admin Password:     $(grep '^OPS_OPENOPS_ADMIN_PASSWORD=' .env | cut -d= -f2-)"
+  echo
+}
+
+# Execute main function
+main
