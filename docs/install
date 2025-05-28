@@ -22,11 +22,8 @@ headline() {
 
 check_for_user_confirmation() {
   if [ "$INTERACTIVE" = "true" ]; then
-    printf "Press any key to continue, or Ctrl+C to exit..."
-    stty -echo -icanon time 0 min 1 </dev/tty
-    dd bs=1 count=1 < /dev/tty >/dev/null 2>&1
-    stty sane </dev/tty
-    echo
+    printf "Press Enter to continue, or Ctrl+C to cancel..."
+    read -r </dev/tty
   fi
 }
 
