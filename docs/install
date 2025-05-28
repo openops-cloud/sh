@@ -14,7 +14,9 @@ ZIP_FILE="$INSTALL_DIR/openops-dc-${OPENOPS_VERSION}.zip"
 headline_number=1
 headline() {
   echo
-  echo "========== ${headline_number}. $1 =========="
+  echo "----------------------------------------------------------------"
+  echo "# ${headline_number}. $1"
+  echo "----------------------------------------------------------------"
   headline_number=$(($headline_number + 1))
 }
 
@@ -194,6 +196,10 @@ if [ "$OS_TYPE" != "mac" ]; then
 fi
 
 headline "Download and extract OpenOps release files"
+echo "Release URL:              $OPENOPS_URL"
+echo "Installation directory:   $INSTALL_DIR"
+echo "File name:                $ZIP_FILE"
+
 mkdir -p "$INSTALL_DIR" && cd "$INSTALL_DIR"
 
 # Use curl or wget, whichever is available
