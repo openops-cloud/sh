@@ -22,13 +22,11 @@ headline() {
 
 check_for_user_confirmation() {
   if [ "$INTERACTIVE" = "true" ]; then
-    if [ "$OS_TYPE" = "mac" ]; then
-      read -r -p "Press any key to continue, or Ctrl+C to exit..." </dev/tty
-    else
-      printf "Press any key to continue, or Ctrl+C to exit..."
-      echo
-      exec 3<&0; exec 0</dev/tty; read -r answer; exec 0<&3
-    fi
+    printf "Press any key to continue, or Ctrl+C to exit..."
+    stty -echo -icanon time 0 min 1 </dev/tty
+    dd bs=1 count=1 < /dev/tty >/dev/null 2>&1
+    stty sane </dev/tty
+    echo
   fi
 }
 
