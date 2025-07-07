@@ -4,7 +4,7 @@ set -eu
 
 INTERACTIVE=${OPENOPS_INTERACTIVE:-true}
 OPENOPS_VERSION=${OPENOPS_VERSION:-"0.3.1"}
-OPENOPS_URL=${OPENOPS_URL:-"https://github.com/openops-cloud/openops/releases/download/${OPENOPS_VERSION}/openops-dc-${OPENOPS_VERSION}.zip"}
+OPENOPS_URL=${OPENOPS_URL:-"https://files.openops.com/releases/${OPENOPS_VERSION}/openops-dc-${OPENOPS_VERSION}.zip"}
 INSTALL_DIR=${OPENOPS_INSTALLATION_PATH:-"$HOME/openops"}
 ZIP_FILE="$INSTALL_DIR/openops-dc-${OPENOPS_VERSION}.zip"
 REQUIRED_DOCKER_MAJOR=27
@@ -21,24 +21,17 @@ main() {
 
   headline "Detect OS"
   KERNEL="$(uname -s 2>/dev/null || echo Unknown)"
-
-  # We'll store OS_TYPE as one of "mac", "debian", or "fedora"
-  OS_TYPE=""
-
-  # Function: parse /etc/os-release to guess Debian vs. Fedora
   if [ "$KERNEL" = "Darwin" ]; then
     OS_TYPE="mac"
   else
     detect_linux_family
   fi
-
   echo "OS type detected: $OS_TYPE"
 
   headline "Verify sudo access"
   verify_sudo_access
 
   headline "Install prerequisites"
-
   echo "Verifying docker installation..."
   verify_docker_installation
 
@@ -196,11 +189,16 @@ verify_docker_installation() {
   DOCKER_MAJOR="$(check_docker_major_version)"
 
   if [ -z "$DOCKER_MAJOR" ] || [ "$DOCKER_MAJOR" -lt "$REQUIRED_DOCKER_MAJOR" ]; then
+    if [ -z "$DOCKER_MAJOR" ]; then
+      echo "Docker is not installed or not found in PATH." >&2
+    else
+      echo "Docker version is too old: $DOCKER_MAJOR (required: ${REQUIRED_DOCKER_MAJOR}+)." >&2
+    fi
     if [ "$OS_TYPE" = "mac" ]; then
       if command -v brew >/dev/null 2>&1; then
         brew install docker
       else
-        echo "Docker version ${REQUIRED_DOCKER_MAJOR}+ required, but cannot auto-install on macOS." >&2
+        echo "Docker version ${REQUIRED_DOCKER_MAJOR}+ cannot auto-install on macOS." >&2
         echo "Please install/update Docker Desktop from: https://www.docker.com/products/docker-desktop" >&2
         exit 1
       fi
