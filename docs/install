@@ -2,19 +2,19 @@
 
 set -eu
 
-INTERACTIVE=${OPENOPS_INTERACTIVE:-true}
-OPENOPS_VERSION=${OPENOPS_VERSION:-"0.3.1"}
-OPENOPS_URL=${OPENOPS_URL:-"https://files.openops.com/releases/${OPENOPS_VERSION}/openops-dc-${OPENOPS_VERSION}.zip"}
-INSTALL_DIR=${OPENOPS_INSTALLATION_PATH:-"$HOME/openops"}
-ZIP_FILE="$INSTALL_DIR/openops-dc-${OPENOPS_VERSION}.zip"
-REQUIRED_DOCKER_MAJOR=27
-HEADLINE_INDEX=1
-
 main() {
+  INTERACTIVE=${OPENOPS_INTERACTIVE:-true}
+  INSTALL_DIR=${OPENOPS_INSTALLATION_PATH:-"$HOME/openops"}
+  OPENOPS_VERSION=${OPENOPS_VERSION:-$(get_latest_release_version)}
+  OPENOPS_URL=${OPENOPS_URL:-"https://files.openops.com/releases/${OPENOPS_VERSION}/openops-dc-${OPENOPS_VERSION}.zip"}
+  ZIP_FILE="$INSTALL_DIR/openops-dc-${OPENOPS_VERSION}.zip"
+  REQUIRED_DOCKER_MAJOR=27
+  HEADLINE_INDEX=1
+
   echo
   echo "This script installs OpenOps (docker compose deployment) and required dependencies."
   echo
-  echo "Release number:     $OPENOPS_VERSION"
+  echo "Release version:    $OPENOPS_VERSION"
   echo "Installation path:  $INSTALL_DIR"
   echo
   check_for_user_confirmation
@@ -82,6 +82,18 @@ check_for_user_confirmation() {
     echo "Press Enter to continue, or Ctrl+C to cancel..."
     read -r answer </dev/tty
   fi
+}
+
+get_latest_release_version() {
+  curl -s https://api.github.com/repos/openops-cloud/openops/releases/latest | \
+  while IFS= read -r line; do
+    case "$line" in
+      *\"tag_name\"*)
+        tag=$(printf "%s" "$line" | sed 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+        printf "%s\n" "$tag"
+        ;;
+    esac
+  done
 }
 
 generate_random_password() {
@@ -211,28 +223,29 @@ verify_docker_installation() {
     echo "Docker version is >= ${REQUIRED_DOCKER_MAJOR} (major version: $DOCKER_MAJOR). OK."
   fi
 
-  # Ensure Docker is running on Linux
-  if [ "$OS_TYPE" != "mac" ]; then
-    if command -v systemctl >/dev/null 2>&1; then
-      if ! sudo systemctl is-active --quiet docker; then
-        echo "Starting Docker service..."
-        sudo systemctl start docker || true
-      fi
+  echo "Ensuring Docker is running..."
+  dockercmd info >/dev/null 2>&1 || {
+    echo "Docker is not running. Starting Docker..." >&2
+    if [ "$OS_TYPE" = "mac" ]; then
+      open -a Docker
+      echo "Please wait for Docker to start..."
+      while ! docker info >/dev/null 2>&1; do
+        sleep 1
+      done
+    else
+      sudo systemctl start docker || {
+        echo "Failed to start Docker. Please check your installation." >&2
+        exit 1
+      }
     fi
-  fi
+  }
+
+  echo "Docker is installed and running."
 }
 
 download_and_unzip_release() {
   echo "Downloading release..."
-  # Use curl or wget, whichever is available
-  if command -v curl >/dev/null 2>&1; then
-    curl -fSL "$OPENOPS_URL" -o "$ZIP_FILE"
-  elif command -v wget >/dev/null 2>&1; then
-    wget -O "$ZIP_FILE" "$OPENOPS_URL"
-  else
-    echo "Error: Neither curl nor wget found. Please install one of them and re-run." >&2
-    exit 1
-  fi
+  curl -fSL "$OPENOPS_URL" -o "$ZIP_FILE"
   echo "Unzipping..."
   if ! command -v unzip >/dev/null 2>&1; then
     echo "Unzip not found. Installing..."
@@ -257,11 +270,7 @@ generate_configuration_file() {
           # If it's a remote session, use a public IP
           if [ "${SSH_CLIENT-}" ]; then
             echo "Remote session detected, using public IP address" >&2
-            if command -v curl >/dev/null 2>&1; then
-              ip=$(curl -s https://api.ipify.org)
-            elif command -v wget >/dev/null 2>&1; then
-              ip=$(wget -qO - https://api.ipify.org)
-            fi
+            ip=$(curl -s https://api.ipify.org)
             echo "Detected public IP: $ip" >&2
             echo "OPS_PUBLIC_URL=http://$ip"
           else
