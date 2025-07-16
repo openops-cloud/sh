@@ -106,9 +106,9 @@ generate_random_hex() {
 
 dockercmd () {
   if [ "$OS_TYPE" = "mac" ]; then
-    COMPOSE_PARALLEL_LIMIT=2 docker "$@"
+    COMPOSE_PARALLEL_LIMIT=1 docker "$@"
   else
-    sudo COMPOSE_PARALLEL_LIMIT=2 docker "$@"
+    sudo COMPOSE_PARALLEL_LIMIT=1 docker "$@"
   fi
 }
 
