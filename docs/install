@@ -105,10 +105,10 @@ generate_random_hex() {
 }
 
 dockercmd () {
-  if [ "$OS_TYPE" = "mac" ]; then
-    docker "$@"
+  if docker info >/dev/null 2>&1; then
+      docker "$@"
   else
-    sudo docker "$@"
+      sudo docker "$@"
   fi
 }
 
