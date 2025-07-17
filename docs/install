@@ -163,7 +163,7 @@ verify_sudo_access() {
 # Parse major Docker version (e.g. "27" from "Docker version 27.0.1, build xyz")
 check_docker_major_version() {
   # If Docker is missing, this prints nothing
-  DOCKER_VERSION_STR="$(docker --version 2>/dev/null || true)"
+  DOCKER_VERSION_STR="$(dockercmd --version 2>/dev/null || true)"
   # Example: "Docker version 27.0.1, build abcdef"
   # We'll use sed to extract the first number after "Docker version "
   # If it fails, it returns empty
@@ -229,7 +229,7 @@ verify_docker_installation() {
     if [ "$OS_TYPE" = "mac" ]; then
       open -a Docker
       echo "Please wait for Docker to start..."
-      while ! docker info >/dev/null 2>&1; do
+      while ! dockercmd info >/dev/null 2>&1; do
         sleep 1
       done
     else
