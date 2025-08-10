@@ -1,0 +1,174 @@
+#!/bin/sh
+
+set -eu
+
+main() {
+  INTERACTIVE=${OPENOPS_INTERACTIVE:-true}
+  INSTALL_DIR=${OPENOPS_INSTALLATION_PATH:-"$HOME/openops"}
+  DOMAIN=${OPENOPS_DOMAIN:-""}
+  EMAIL=${OPENOPS_EMAIL:-""}
+  HEADLINE_INDEX=1
+
+  cat <<EOF
+  This scripts configure TLS on an existing OpenOps installation.
+
+  Installation path:  $INSTALL_DIR
+EOF
+  check_for_user_confirmation
+
+  headline "Detect OS"
+  KERNEL="$(uname -s 2>/dev/null || echo Unknown)"
+  if [ "$KERNEL" = "Darwin" ]; then
+    OS_TYPE="mac"
+  else
+    detect_linux_family
+  fi
+  echo "OS type detected: $OS_TYPE"
+
+  headline "Verify sudo access"
+  verify_sudo_access
+
+  headline "Create certificates"
+  create_certificates
+
+  headline "Update configurations"
+  update_configurations
+
+  headline "Restart OpenOps"
+  retry dockercmd compose down
+  retry dockercmd compose up -d
+
+  echo
+  echo "Done!"
+  echo
+  echo "OpenOps should now be available on HTTPS."
+  echo "Application URL:    $(grep '^OPS_PUBLIC_URL=' .env | cut -d= -f2-)"
+  echo
+  echo "For support, join our Slack community at https://slack.openops.com or contact support@openops.com"
+}
+
+headline() {
+  echo
+  echo "----------------------------------------------------------------"
+  echo "# ${HEADLINE_INDEX}. $1"
+  echo "----------------------------------------------------------------"
+  HEADLINE_INDEX=$((HEADLINE_INDEX + 1))
+}
+
+check_for_user_confirmation() {
+  if [ "$INTERACTIVE" = "true" ]; then
+    echo "Press Enter to continue, or Ctrl+C to cancel..."
+    read -r answer </dev/tty
+  fi
+}
+
+dockercmd () {
+  if docker info >/dev/null 2>&1; then
+      docker "$@"
+  else
+      sudo docker "$@"
+  fi
+}
+
+detect_linux_family() {
+  if [ ! -f /etc/os-release ]; then
+    echo "Cannot find /etc/os-release; defaulting to Debian-like." 1>&2
+    OS_TYPE="debian"
+    return
+  fi
+
+  # Extract ID= and ID_LIKE= lines
+  ID_LINE="$(grep '^ID=' /etc/os-release 2>/dev/null | head -n1 || true)"
+  ID_LIKE_LINE="$(grep '^ID_LIKE=' /etc/os-release 2>/dev/null | head -n1 || true)"
+
+  # Remove quotes, e.g. ID="ubuntu" -> ubuntu
+  ID_VAL="$(echo "$ID_LINE" | cut -d= -f2 | tr -d '"')"
+  ID_LIKE_VAL="$(echo "$ID_LIKE_LINE" | cut -d= -f2 | tr -d '"')"
+
+  case "$ID_VAL" in
+    fedora|centos|rhel|amzn)
+      OS_TYPE="fedora"
+      ;;
+    debian|ubuntu|linuxmint|elementary|pop|zorin|kali|mx|raspbian|devuan)
+      OS_TYPE="debian"
+      ;;
+    *)
+      # Check ID_LIKE
+      if echo "$ID_LIKE_VAL" | grep -q -E 'fedora|rhel'; then
+        OS_TYPE="fedora"
+      elif echo "$ID_LIKE_VAL" | grep -q debian; then
+        OS_TYPE="debian"
+      else
+        echo "Unrecognized Linux distro; defaulting to Debian-like." 1>&2
+        OS_TYPE="debian"
+      fi
+      ;;
+  esac
+}
+
+verify_sudo_access() {
+  if sudo -n true 2>/dev/null; then
+    echo "sudo is available and does not require a password."
+  else
+    echo "sudo requires a password. Please enter it now..." >&2
+    if ! sudo true; then
+      echo "Authentication with sudo failed." >&2
+      exit 1
+    fi
+  fi
+}
+
+generate_configuration_file() {
+    while IFS= read -r line; do
+      case "$line" in
+        OPS_PUBLIC_URL=*)
+          echo "OPS_PUBLIC_URL=https://$DOMAIN"
+          ;;
+        *)
+          echo "$line"
+          ;;
+      esac
+    done < .env > .env.tmp && mv .env.tmp .env
+
+    mv nginx.gateway.conf nginx.gateway.conf.bak
+    cp nginx.gateway.tls.conf nginx.gateway.conf
+}
+
+docker_pull() {
+  retry dockercmd compose pull
+}
+
+retry() {
+  i=0
+  max_retries=3
+
+  while [ "$i" -lt "$max_retries" ]; do
+    "$@" && return 0
+    i=$((i + 1))
+    echo "Retry $i of $max_retries..."
+    sleep 2
+  done
+
+  echo "Command failed after $max_retries attempts: $*"
+  return 1
+}
+
+create_certificates() {
+  mkdir -p tls/etc tls/var tls/acme
+  sudo docker run --rm --name certbot \
+      -v ./tls/etc:/etc/letsencrypt \
+      -v ./tls/var:/var/lib/letsencrypt \
+      -v ./tls/acme:/var/www/acme \
+      certbot/certbot certonly \
+      --webroot -w /var/www/acme \
+      -m $EMAIL \
+      -d $DOMAIN \
+      --non-interactive --agree-tos
+
+  cp tls/etc/live/$DOMAIN/fullchain.pem tls/cert.pem
+  cp tls/etc/live/$DOMAIN/privkey.pem tls/key.pem
+}
+
+main
+
+echo
