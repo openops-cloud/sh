@@ -53,7 +53,7 @@ main() {
   fi
 
   headline "Pull docker images"
-  retry dockercmd compose pull
+  docker_pull
 
   headline "Run OpenOps"
   dockercmd compose up -d
@@ -293,6 +293,10 @@ generate_configuration_file() {
     done < .env > .env.tmp && mv .env.tmp .env
 }
 
+docker_pull() {
+  retry dockercmd compose pull
+}
+
 retry() {
   i=0
   max_retries=3
@@ -309,3 +313,5 @@ retry() {
 }
 
 main
+
+echo 
