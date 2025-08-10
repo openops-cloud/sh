@@ -10,10 +10,22 @@ main() {
   HEADLINE_INDEX=1
 
   cat <<EOF
-  This scripts configure TLS on an existing OpenOps installation.
+  This script configures TLS on an existing OpenOps installation.
+
+  Requirements:
+  - OpenOps must be installed and running
+  - You must have a valid domain name and email address for certificate registration
+  - The server must be accessible from the internet for certificate validation
+
+  The script will update existing certificates if they are already configured.
 
   Installation path:  $INSTALL_DIR
 EOF
+
+  [ -z "${DOMAIN+x}" ] && { [ "$INTERACTIVE" = "true" ] || { printf '%s\n' "OPENOPS_DOMAIN is not set" >&2; exit 1; }; printf 'Enter your domain: '; IFS= read -r DOMAIN; }
+  echo "Domain: $DOMAIN"
+  [ -z "${EMAIL+x}" ] && { [ "$INTERACTIVE" = "true" ] || { printf '%s\n' "OPENOPS_EMAIL is not set" >&2; exit 1; }; printf 'Enter your email for certificate related notifications: '; IFS= read -r EMAIL; }
+  echo "Email: $EMAIL"
   check_for_user_confirmation
 
   headline "Detect OS"
@@ -31,8 +43,8 @@ EOF
   headline "Create certificates"
   create_certificates
 
-  headline "Update configurations"
-  update_configurations
+  headline "Update configuration files"
+  update_configuration
 
   headline "Restart OpenOps"
   retry dockercmd compose down
@@ -41,7 +53,7 @@ EOF
   echo
   echo "Done!"
   echo
-  echo "OpenOps should now be available on HTTPS."
+  echo "OpenOps should now be accessible via HTTPS."
   echo "Application URL:    $(grep '^OPS_PUBLIC_URL=' .env | cut -d= -f2-)"
   echo
   echo "For support, join our Slack community at https://slack.openops.com or contact support@openops.com"
@@ -118,7 +130,8 @@ verify_sudo_access() {
   fi
 }
 
-generate_configuration_file() {
+update_configuration() {
+    echo "Updating .env with the new public URL..."
     while IFS= read -r line; do
       case "$line" in
         OPS_PUBLIC_URL=*)
@@ -130,12 +143,9 @@ generate_configuration_file() {
       esac
     done < .env > .env.tmp && mv .env.tmp .env
 
-    mv nginx.gateway.conf nginx.gateway.conf.bak
-    cp nginx.gateway.tls.conf nginx.gateway.conf
-}
-
-docker_pull() {
-  retry dockercmd compose pull
+    echo "Updating nginx configuration files..."
+    mv -v nginx.gateway.conf nginx.gateway.conf.bak
+    cp -v nginx.gateway.tls.conf nginx.gateway.conf
 }
 
 retry() {
@@ -154,8 +164,8 @@ retry() {
 }
 
 create_certificates() {
-  mkdir -p tls/etc tls/var tls/acme
-  sudo docker run --rm --name certbot \
+  sudo mkdir -p tls/etc tls/var tls/acme
+  dockercmd run --rm --name certbot \
       -v ./tls/etc:/etc/letsencrypt \
       -v ./tls/var:/var/lib/letsencrypt \
       -v ./tls/acme:/var/www/acme \
@@ -165,8 +175,8 @@ create_certificates() {
       -d $DOMAIN \
       --non-interactive --agree-tos
 
-  cp tls/etc/live/$DOMAIN/fullchain.pem tls/cert.pem
-  cp tls/etc/live/$DOMAIN/privkey.pem tls/key.pem
+  sudo cp -v tls/etc/live/$DOMAIN/fullchain.pem tls/cert.pem
+  sudo cp -v tls/etc/live/$DOMAIN/privkey.pem tls/key.pem
 }
 
 main
