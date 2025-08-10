@@ -1,15 +1,15 @@
 #!/bin/sh
 
 
-echo
-echo "DESCRIPTION"
-echo "       Use openops.sh to install, update and interact with OpenOps."
-echo "       Visit https://www.openops.com for more information about OpenOps."
-echo
-echo "SCRIPTS"
-echo "       Install or update OpenOps (docker-compose):"
-echo "              curl -fsS https://openops.sh/install | sh"
-echo "       Upload and share docker logs:"
-echo "              curl -fsS https://openops.sh/share-logs | sh"
-echo
+cat <<EOF
+DESCRIPTION
+       Use openops.sh to install, update and interact with OpenOps.
+       Visit https://docs.openops.com for more information.
+
+SCRIPTS
+       Install or update OpenOps (docker-compose):
+              curl -fsS https://openops.sh/install | sh
+       Upload and share docker logs:
+              curl -fsS https://openops.sh/share-logs | sh
+EOF
 
