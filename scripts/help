@@ -7,8 +7,12 @@ DESCRIPTION
        Visit https://docs.openops.com for more information.
 
 SCRIPTS
+       Show this help message:
+              curl -fsS https://openops.sh/help | sh
        Install or update OpenOps (docker-compose):
               curl -fsS https://openops.sh/install | sh
+       Configure TLS or update certificates on an existing OpenOps installation:
+              curl -fsS https://openops.sh/tls | sh
        Upload and share docker logs:
               curl -fsS https://openops.sh/share-logs | sh
 EOF
