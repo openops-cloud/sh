@@ -22,9 +22,9 @@ The script will update existing certificates if they are already configured.
 Installation path:  $INSTALL_DIR
 EOF
 
-  [ -z "${DOMAIN}" ] && { [ "$INTERACTIVE" = "true" ] || { printf '%s\n' "OPENOPS_DOMAIN is not set" >&2; exit 1; }; printf 'Enter your domain: '; IFS= read -r DOMAIN; }
+  [ -z "${DOMAIN}" ] && { [ "$INTERACTIVE" = "true" ] || { printf '%s\n' "OPENOPS_DOMAIN is not set" >&2; exit 1; }; printf 'Enter your domain: '; IFS= read -r DOMAIN < /dev/tty ; }
   echo "Domain: $DOMAIN"
-  [ -z "${EMAIL}" ] && { [ "$INTERACTIVE" = "true" ] || { printf '%s\n' "OPENOPS_EMAIL is not set" >&2; exit 1; }; printf 'Enter your email for certificate related notifications: '; IFS= read -r EMAIL; }
+  [ -z "${EMAIL}" ] && { [ "$INTERACTIVE" = "true" ] || { printf '%s\n' "OPENOPS_EMAIL is not set" >&2; exit 1; }; printf 'Enter your email for certificate related notifications: '; IFS= read -r EMAIL < /dev/tty ; }
   echo "Email: $EMAIL"
   check_for_user_confirmation
 
@@ -131,11 +131,15 @@ verify_sudo_access() {
 }
 
 update_configuration() {
-    echo "Updating .env with the new public URL..."
+    found_nginx_var=
     while IFS= read -r line; do
       case "$line" in
         OPS_PUBLIC_URL=*)
           echo "OPS_PUBLIC_URL=https://$DOMAIN"
+          ;;
+        OPS_NGINX_CONFIG_FILE=*)
+          echo "OPS_NGINX_CONFIG_FILE=nginx.gateway.tls.conf"
+          found_nginx_var=1
           ;;
         *)
           echo "$line"
@@ -143,9 +147,7 @@ update_configuration() {
       esac
     done < .env > .env.tmp && mv .env.tmp .env
 
-    echo "Updating nginx configuration files..."
-    mv -v nginx.gateway.conf nginx.gateway.conf.bak
-    cp -v nginx.gateway.tls.conf nginx.gateway.conf
+    [ "$found_nginx_var" ] || echo "OPS_NGINX_CONFIG_FILE=nginx.gateway.tls.conf" >> .env
 }
 
 retry() {
