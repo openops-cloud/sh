@@ -175,9 +175,10 @@ install_docker_debian() {
   echo "Installing Docker on Debian-like..."
   sudo apt-get update -y
   sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
-  # shellcheck disable=SC2046
+  # shellcheck disable=SC2046,SC1091
   curl -fsSL https://download.docker.com/linux/$(. /etc/os-release; echo "$ID")/gpg \
     | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+  # shellcheck disable=SC1091
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] \
     https://download.docker.com/linux/$(. /etc/os-release; echo "$ID") \
     $(lsb_release -cs) stable" \
