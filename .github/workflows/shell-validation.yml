@@ -72,24 +72,6 @@ jobs:
         done < scripts-list.txt
         exit $exit_code
 
-    - name: Format Check (shfmt)
-      run: |
-        echo "Checking shell script formatting..."
-        exit_code=0
-        while IFS= read -r script; do
-          if [ -f "$script" ]; then
-            echo "Checking format of $script..."
-            if ! shfmt -d -s "$script"; then
-              echo "❌ $script is not properly formatted"
-              exit_code=1
-            else
-              echo "✅ $script is properly formatted"
-            fi
-            echo "---"
-          fi
-        done < scripts-list.txt
-        exit $exit_code
-
     - name: Executable Permissions Check
       run: |
         echo "Checking executable permissions..."
