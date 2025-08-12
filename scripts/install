@@ -1,0 +1,320 @@
+#!/bin/sh
+
+set -eu
+
+main() {
+  INTERACTIVE=${OPENOPS_INTERACTIVE:-true}
+  INSTALL_DIR=${OPENOPS_INSTALLATION_PATH:-"$HOME/openops"}
+  OPENOPS_VERSION=${OPENOPS_VERSION:-$(get_latest_release_version)}
+  OPENOPS_URL=${OPENOPS_URL:-"https://files.openops.com/releases/${OPENOPS_VERSION}/openops-dc-${OPENOPS_VERSION}.zip"}
+  ZIP_FILE="$INSTALL_DIR/openops-dc-${OPENOPS_VERSION}.zip"
+  REQUIRED_DOCKER_MAJOR=27
+  HEADLINE_INDEX=1
+
+  echo
+  echo "This script installs OpenOps (docker compose deployment) and required dependencies."
+  echo
+  echo "Release version:    $OPENOPS_VERSION"
+  echo "Installation path:  $INSTALL_DIR"
+  echo
+  check_for_user_confirmation
+
+  headline "Detect OS"
+  KERNEL="$(uname -s 2>/dev/null || echo Unknown)"
+  if [ "$KERNEL" = "Darwin" ]; then
+    OS_TYPE="mac"
+  else
+    detect_linux_family
+  fi
+  echo "OS type detected: $OS_TYPE"
+
+  headline "Verify sudo access"
+  verify_sudo_access
+
+  headline "Install prerequisites"
+  echo "Verifying docker installation..."
+  verify_docker_installation
+
+  headline "Download and extract OpenOps release files"
+  echo "Release URL:              $OPENOPS_URL"
+  echo "Installation directory:   $INSTALL_DIR"
+  echo "File name:                $ZIP_FILE"
+  echo
+  mkdir -p "$INSTALL_DIR" && cd "$INSTALL_DIR"
+  download_and_unzip_release
+
+  if [ ! -f .env ] && [ -f .env.defaults ]; then
+    headline "Generate configuration file .env"
+    generate_configuration_file
+    echo "Created a .env file."
+  else
+    headline "Stop existing containers"
+    retry dockercmd compose down
+  fi
+
+  headline "Pull docker images"
+  docker_pull
+
+  headline "Run OpenOps"
+  dockercmd compose up -d
+
+  echo
+  echo "Done!"
+  echo
+  echo "OpenOps should now be up and running."
+  echo "Application URL:    $(grep '^OPS_PUBLIC_URL=' .env | cut -d= -f2-)"
+  echo "Admin Username:     $(grep '^OPS_OPENOPS_ADMIN_EMAIL=' .env | cut -d= -f2-)"
+  echo "Admin Password:     $(grep '^OPS_OPENOPS_ADMIN_PASSWORD=' .env | cut -d= -f2-)"
+  echo
+  echo "For support, join our Slack community at https://slack.openops.com or contact support@openops.com"
+}
+
+headline() {
+  echo
+  echo "----------------------------------------------------------------"
+  echo "# ${HEADLINE_INDEX}. $1"
+  echo "----------------------------------------------------------------"
+  HEADLINE_INDEX=$((HEADLINE_INDEX + 1))
+}
+
+check_for_user_confirmation() {
+  if [ "$INTERACTIVE" = "true" ]; then
+    echo "Press Enter to continue, or Ctrl+C to cancel..."
+    # shellcheck disable=SC2034
+    read -r answer </dev/tty
+  fi
+}
+
+get_latest_release_version() {
+  curl -s https://api.github.com/repos/openops-cloud/openops/releases/latest | \
+  while IFS= read -r line; do
+    case "$line" in
+      *\"tag_name\"*)
+        tag=$(printf "%s" "$line" | sed 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+        printf "%s\n" "$tag"
+        ;;
+    esac
+  done
+}
+
+generate_random_password() {
+  dd if=/dev/urandom bs=1 count=512 2>/dev/null | LC_ALL=C tr -dc '[:alnum:]' | cut -c -16
+}
+
+generate_random_hex() {
+   dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -A none -t x1 | tr -d ' \n'
+}
+
+dockercmd () {
+  if docker info >/dev/null 2>&1; then
+      docker "$@"
+  else
+      sudo docker "$@"
+  fi
+}
+
+detect_linux_family() {
+  if [ ! -f /etc/os-release ]; then
+    echo "Cannot find /etc/os-release; defaulting to Debian-like." 1>&2
+    OS_TYPE="debian"
+    return
+  fi
+
+  # Extract ID= and ID_LIKE= lines
+  ID_LINE="$(grep '^ID=' /etc/os-release 2>/dev/null | head -n1 || true)"
+  ID_LIKE_LINE="$(grep '^ID_LIKE=' /etc/os-release 2>/dev/null | head -n1 || true)"
+
+  # Remove quotes, e.g. ID="ubuntu" -> ubuntu
+  ID_VAL="$(echo "$ID_LINE" | cut -d= -f2 | tr -d '"')"
+  ID_LIKE_VAL="$(echo "$ID_LIKE_LINE" | cut -d= -f2 | tr -d '"')"
+
+  case "$ID_VAL" in
+    fedora|centos|rhel|amzn)
+      OS_TYPE="fedora"
+      ;;
+    debian|ubuntu|linuxmint|elementary|pop|zorin|kali|mx|raspbian|devuan)
+      OS_TYPE="debian"
+      ;;
+    *)
+      # Check ID_LIKE
+      if echo "$ID_LIKE_VAL" | grep -q -E 'fedora|rhel'; then
+        OS_TYPE="fedora"
+      elif echo "$ID_LIKE_VAL" | grep -q debian; then
+        OS_TYPE="debian"
+      else
+        echo "Unrecognized Linux distro; defaulting to Debian-like." 1>&2
+        OS_TYPE="debian"
+      fi
+      ;;
+  esac
+}
+
+verify_sudo_access() {
+  if sudo -n true 2>/dev/null; then
+    echo "sudo is available and does not require a password."
+  else
+    echo "sudo requires a password. Please enter it now..." >&2
+    if ! sudo true; then
+      echo "Authentication with sudo failed." >&2
+      exit 1
+    fi
+  fi
+}
+
+# Parse major Docker version (e.g. "27" from "Docker version 27.0.1, build xyz")
+check_docker_major_version() {
+  # If Docker is missing, this prints nothing
+  DOCKER_VERSION_STR="$(dockercmd --version 2>/dev/null || true)"
+  # Example: "Docker version 27.0.1, build abcdef"
+  # We'll use sed to extract the first number after "Docker version "
+  # If it fails, it returns empty
+  echo "$DOCKER_VERSION_STR" | sed -n 's/^Docker version \([0-9][0-9]*\)\..*/\1/p'
+}
+
+install_docker_debian() {
+  echo "Installing Docker on Debian-like..."
+  sudo apt-get update -y
+  sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
+  # shellcheck disable=SC2046,SC1091
+  curl -fsSL https://download.docker.com/linux/$(. /etc/os-release; echo "$ID")/gpg \
+    | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+  # shellcheck disable=SC1091
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] \
+    https://download.docker.com/linux/$(. /etc/os-release; echo "$ID") \
+    $(lsb_release -cs) stable" \
+    | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+  sudo apt-get update -y
+  sudo apt-get install -y docker-ce docker-ce-cli containerd.io \
+                          docker-buildx-plugin docker-compose-plugin
+  sudo systemctl enable docker || true
+  sudo systemctl start docker || true
+}
+
+install_docker_fedora() {
+  echo "Installing Docker on Fedora-like..."
+  sudo dnf install -y dnf-plugins-core
+  sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo || true
+  sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  sudo systemctl enable docker || true
+  sudo systemctl start docker || true
+}
+
+verify_docker_installation() {
+  DOCKER_MAJOR="$(check_docker_major_version)"
+
+  if [ -z "$DOCKER_MAJOR" ] || [ "$DOCKER_MAJOR" -lt "$REQUIRED_DOCKER_MAJOR" ]; then
+    if [ -z "$DOCKER_MAJOR" ]; then
+      echo "Docker is not installed or not found in PATH." >&2
+    else
+      echo "Docker version is too old: $DOCKER_MAJOR (required: ${REQUIRED_DOCKER_MAJOR}+)." >&2
+    fi
+    if [ "$OS_TYPE" = "mac" ]; then
+      if command -v brew >/dev/null 2>&1; then
+        brew install docker
+      else
+        echo "Docker version ${REQUIRED_DOCKER_MAJOR}+ cannot auto-install on macOS." >&2
+        echo "Please install/update Docker Desktop from: https://www.docker.com/products/docker-desktop" >&2
+        exit 1
+      fi
+    elif [ "$OS_TYPE" = "fedora" ]; then
+      install_docker_fedora
+    else
+      install_docker_debian
+    fi
+  else
+    echo "Docker version is >= ${REQUIRED_DOCKER_MAJOR} (major version: $DOCKER_MAJOR). OK."
+  fi
+
+  echo "Ensuring Docker is running..."
+  dockercmd info >/dev/null 2>&1 || {
+    echo "Docker is not running. Starting Docker..." >&2
+    if [ "$OS_TYPE" = "mac" ]; then
+      open -a Docker
+      echo "Please wait for Docker to start..."
+      while ! dockercmd info >/dev/null 2>&1; do
+        sleep 1
+      done
+    else
+      sudo systemctl start docker || {
+        echo "Failed to start Docker. Please check your installation." >&2
+        exit 1
+      }
+    fi
+  }
+
+  echo "Docker is installed and running."
+}
+
+download_and_unzip_release() {
+  echo "Downloading release..."
+  curl -fSL "$OPENOPS_URL" -o "$ZIP_FILE"
+  echo "Unzipping..."
+  if ! command -v unzip >/dev/null 2>&1; then
+    echo "Unzip not found. Installing..."
+    if [ "$OS_TYPE" = "mac" ]; then
+      echo "On macOS, please install unzip (e.g. brew install unzip) or open the zip manually." >&2
+      exit 1
+    elif [ "$OS_TYPE" = "fedora" ]; then
+      sudo dnf install -y unzip
+    else
+      sudo apt-get update -y
+      sudo apt-get install -y unzip
+    fi
+  fi
+  unzip -o "openops-dc-${OPENOPS_VERSION}.zip"
+}
+
+generate_configuration_file() {
+    cp .env.defaults .env
+    while IFS= read -r line; do
+      case "$line" in
+        OPS_PUBLIC_URL=*)
+          # If it's a remote session, use a public IP
+          if [ "${SSH_CLIENT-}" ]; then
+            echo "Remote session detected, using public IP address" >&2
+            ip=$(curl -s https://api.ipify.org)
+            echo "Detected public IP: $ip" >&2
+            echo "OPS_PUBLIC_URL=http://$ip"
+          else
+            echo "$line"
+          fi
+          ;;
+        OPS_ENCRYPTION_KEY=*)
+          echo "OPS_ENCRYPTION_KEY=$(generate_random_hex)"
+          echo "Generated a new encryption key" >&2
+          ;;
+        *PASSWORD*=*|*JWT_SECRET*=*)
+          var="${line%%=*}"
+          echo "$var=$(generate_random_password)"
+          echo "Generated a new password for $var" >&2
+          ;;
+        *)
+          echo "$line"
+          ;;
+      esac
+    done < .env > .env.tmp && mv .env.tmp .env
+}
+
+docker_pull() {
+  retry dockercmd compose pull
+}
+
+retry() {
+  i=0
+  max_retries=3
+
+  while [ "$i" -lt "$max_retries" ]; do
+    "$@" && return 0
+    i=$((i + 1))
+    echo "Retry $i of $max_retries..."
+    sleep 2
+  done
+
+  echo "Command failed after $max_retries attempts: $*"
+  return 1
+}
+
+main
+
+echo 

@@ -1,0 +1,40 @@
+#!/bin/bash
+set -eu
+
+INTERACTIVE=${OPENOPS_INTERACTIVE:-true}
+INSTALL_DIR=${OPENOPS_INSTALLATION_PATH:-"$HOME/openops"}
+
+
+if [ "$INTERACTIVE" = "true" ]; then
+  echo "This script will share logs with OpenOps."
+  echo "Are you sure you want to continue? (y/n)"
+  read -r response < /dev/tty
+  if [ "$response" != "y" ]; then
+    exit 0
+  fi
+fi
+
+if [ -f docker-compose.yml ]; then
+  echo "Found docker-compose.yml"
+else
+  echo "Could not find docker-compose.yml, trying $INSTALL_DIR"
+  cd "$INSTALL_DIR" || exit 1
+  if [ -f docker-compose.yml ]; then
+    echo "Found docker-compose.yml"
+  else
+    echo "Could not find docker-compose.yml, exiting"
+    exit 1
+  fi
+fi
+
+echo "Writing logs to a file..."
+# shellcheck disable=SC2024
+sudo docker compose logs --timestamps --no-color > logs.txt
+echo "Uploading logs to S3..."
+LOGS_FILE=$(date +%Y%m%d_%H%M%S).log
+curl -fLX PUT --upload-file logs.txt "https://openops-client-logs.s3.amazonaws.com/$LOGS_FILE"
+echo "Done. File uploaded to https://openops-client-logs.s3.amazonaws.com/$LOGS_FILE"
+echo "Please share the following file name with OpenOps: $LOGS_FILE"
+
+
+
