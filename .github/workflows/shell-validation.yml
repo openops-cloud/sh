@@ -1,0 +1,172 @@
+name: Shell Script Validation
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  validate-shell-scripts:
+    runs-on: ubuntu-latest
+    name: Validate Shell Scripts
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install shellcheck
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y shellcheck
+
+    - name: Install shfmt
+      run: |
+        curl -L -o shfmt https://github.com/mvdan/sh/releases/latest/download/shfmt_v3.7.0_linux_amd64
+        chmod +x shfmt
+        sudo mv shfmt /usr/local/bin/
+
+    - name: Find shell scripts
+      id: find-scripts
+      run: |
+        echo "Found shell scripts:"
+        find scripts/ -type f -executable -o -name "*.sh" | tee scripts-list.txt
+        # Also check files with shell shebangs
+        find scripts/ -type f -exec grep -l '^#!/bin/sh\|^#!/bin/bash\|^#!/usr/bin/env sh\|^#!/usr/bin/env bash' {} \; | tee -a scripts-list.txt
+        sort -u scripts-list.txt > unique-scripts.txt
+        mv unique-scripts.txt scripts-list.txt
+        cat scripts-list.txt
+
+    - name: POSIX Compliance Check (shellcheck)
+      run: |
+        echo "Running shellcheck for POSIX compliance..."
+        exit_code=0
+        while IFS= read -r script; do
+          if [ -f "$script" ]; then
+            echo "Checking $script..."
+            if ! shellcheck -s sh -e SC1091 -e SC2039 "$script"; then
+              echo "❌ $script failed POSIX compliance check"
+              exit_code=1
+            else
+              echo "✅ $script passed POSIX compliance check"
+            fi
+            echo "---"
+          fi
+        done < scripts-list.txt
+        exit $exit_code
+
+    - name: Shell Script Linting (shellcheck extended)
+      run: |
+        echo "Running extended shellcheck analysis..."
+        exit_code=0
+        while IFS= read -r script; do
+          if [ -f "$script" ]; then
+            echo "Linting $script..."
+            if ! shellcheck -f gcc "$script"; then
+              echo "❌ $script failed extended linting"
+              exit_code=1
+            else
+              echo "✅ $script passed extended linting"
+            fi
+            echo "---"
+          fi
+        done < scripts-list.txt
+        exit $exit_code
+
+    - name: Format Check (shfmt)
+      run: |
+        echo "Checking shell script formatting..."
+        exit_code=0
+        while IFS= read -r script; do
+          if [ -f "$script" ]; then
+            echo "Checking format of $script..."
+            if ! shfmt -d -s "$script"; then
+              echo "❌ $script is not properly formatted"
+              exit_code=1
+            else
+              echo "✅ $script is properly formatted"
+            fi
+            echo "---"
+          fi
+        done < scripts-list.txt
+        exit $exit_code
+
+    - name: Executable Permissions Check
+      run: |
+        echo "Checking executable permissions..."
+        exit_code=0
+        while IFS= read -r script; do
+          if [ -f "$script" ]; then
+            if [ ! -x "$script" ]; then
+              echo "⚠️  $script is not executable"
+              exit_code=1
+            else
+              echo "✅ $script has correct executable permissions"
+            fi
+          fi
+        done < scripts-list.txt
+        exit $exit_code
+
+    - name: Shebang Validation
+      run: |
+        echo "Validating shebangs..."
+        exit_code=0
+        while IFS= read -r script; do
+          if [ -f "$script" ]; then
+            first_line=$(head -n1 "$script")
+            case "$first_line" in
+              "#!/bin/sh"|"#!/usr/bin/env sh")
+                echo "✅ $script has valid POSIX shebang: $first_line"
+                ;;
+              "#!/bin/bash"|"#!/usr/bin/env bash")
+                echo "⚠️  $script uses bash shebang (not POSIX): $first_line"
+                ;;
+              "#!"*)
+                echo "❌ $script has non-standard shebang: $first_line"
+                exit_code=1
+                ;;
+              *)
+                echo "❌ $script missing shebang"
+                exit_code=1
+                ;;
+            esac
+          fi
+        done < scripts-list.txt
+        exit $exit_code
+
+    - name: Security Scan (basic)
+      run: |
+        echo "Running basic security checks..."
+        exit_code=0
+        while IFS= read -r script; do
+          if [ -f "$script" ]; then
+            echo "Security scanning $script..."
+            
+            # Check for potentially dangerous patterns
+            if grep -n "eval\|exec\|system\|curl.*|.*sh\|wget.*|.*sh" "$script" | grep -v "^#"; then
+              echo "⚠️  $script contains potentially dangerous patterns"
+            fi
+            
+            # Check for hardcoded credentials patterns
+            if grep -ni "password\|secret\|token\|key" "$script" | grep -v "^#" | grep "="; then
+              echo "⚠️  $script may contain hardcoded credentials"
+            fi
+            
+            # Check for unquoted variables
+            if grep -n '\$[A-Za-z_][A-Za-z0-9_]*[^A-Za-z0-9_"]' "$script" | grep -v "^#"; then
+              echo "⚠️  $script has potentially unquoted variables"
+            fi
+            
+            echo "✅ Basic security scan completed for $script"
+            echo "---"
+          fi
+        done < scripts-list.txt
+        exit $exit_code
+
+    - name: Summary Report
+      if: always()
+      run: |
+        echo "=== Shell Script Validation Summary ==="
+        echo "Scripts validated:"
+        cat scripts-list.txt | wc -l
+        echo ""
+        echo "Validation completed. Check individual step results above for details."
