@@ -70,6 +70,7 @@ headline() {
 check_for_user_confirmation() {
   if [ "$INTERACTIVE" = "true" ]; then
     echo "Press Enter to continue, or Ctrl+C to cancel..."
+    # shellcheck disable=SC2034
     read -r answer </dev/tty
   fi
 }
@@ -170,6 +171,7 @@ retry() {
 }
 
 create_certificates() {
+  cd "$INSTALL_DIR"
   sudo mkdir -p tls/etc tls/var tls/acme
   dockercmd run --rm --name certbot \
       -v ./tls/etc:/etc/letsencrypt \
@@ -178,11 +180,11 @@ create_certificates() {
       certbot/certbot certonly \
       --webroot -w /var/www/acme \
       -m "$EMAIL" \
-      -d $DOMAIN \
+      -d "$DOMAIN" \
       --non-interactive --agree-tos
 
-  sudo cp -v tls/etc/live/$DOMAIN/fullchain.pem tls/cert.pem
-  sudo cp -v tls/etc/live/$DOMAIN/privkey.pem tls/key.pem
+  sudo cp -v "tls/etc/live/$DOMAIN/fullchain.pem" tls/cert.pem
+  sudo cp -v "tls/etc/live/$DOMAIN/privkey.pem" tls/key.pem
 }
 
 main
