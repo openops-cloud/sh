@@ -308,7 +308,7 @@ retry() {
     "$@" && return 0
     i=$((i + 1))
     echo "Retry $i of $max_retries..."
-    sleep 2
+    sleep 5
   done
 
   echo "Command failed after $max_retries attempts: $*"
