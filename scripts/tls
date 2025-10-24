@@ -14,7 +14,7 @@ This script configures TLS on an existing OpenOps installation.
 
 Requirements:
 - OpenOps must be installed and running
-- You must have a valid domain name and email address for certificate registration
+- You must have a working fully qualified domain name and email address for certificate registration
 - The server must be accessible from the internet for certificate validation
 
 The script will update existing certificates if they are already configured.
@@ -22,8 +22,8 @@ The script will update existing certificates if they are already configured.
 Installation path:  $INSTALL_DIR
 EOF
 
-  [ -z "${DOMAIN}" ] && { [ "$INTERACTIVE" = "true" ] || { printf '%s\n' "OPENOPS_DOMAIN is not set" >&2; exit 1; }; printf 'Enter your domain: '; IFS= read -r DOMAIN < /dev/tty ; }
-  echo "Domain: $DOMAIN"
+  [ -z "${DOMAIN}" ] && { [ "$INTERACTIVE" = "true" ] || { printf '%s\n' "OPENOPS_DOMAIN is not set" >&2; exit 1; }; printf 'Enter your fully qualified domain name: '; IFS= read -r DOMAIN < /dev/tty ; }
+  echo "Fully qualified domain name: $DOMAIN"
   [ -z "${EMAIL}" ] && { [ "$INTERACTIVE" = "true" ] || { printf '%s\n' "OPENOPS_EMAIL is not set" >&2; exit 1; }; printf 'Enter your email for certificate related notifications: '; IFS= read -r EMAIL < /dev/tty ; }
   echo "Email: $EMAIL"
   check_for_user_confirmation
