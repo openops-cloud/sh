@@ -22,9 +22,43 @@ The script will update existing certificates if they are already configured.
 Installation path:  $INSTALL_DIR
 EOF
 
-  [ -z "${DOMAIN}" ] && { [ "$INTERACTIVE" = "true" ] || { printf '%s\n' "OPENOPS_DOMAIN is not set" >&2; exit 1; }; printf 'Enter your fully qualified domain name: '; IFS= read -r DOMAIN < /dev/tty ; }
+  # Try to fetch existing URL from configuration (only if it's https)
+  CURRENT_URL=""
+  if [ -f "$INSTALL_DIR/.env" ]; then
+    FULL_URL=$(grep '^OPS_PUBLIC_URL=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2- || true)
+    case "$FULL_URL" in
+      https://*)
+        CURRENT_URL=$(echo "$FULL_URL" | sed 's|^https://||')
+        ;;
+    esac
+  fi
+
+  if [ -z "${DOMAIN}" ]; then
+    if [ "$INTERACTIVE" = "true" ]; then
+      if [ -n "$CURRENT_URL" ]; then
+        printf 'Enter your fully qualified domain name [%s]: ' "$CURRENT_URL"
+      else
+        printf 'Enter your fully qualified domain name: '
+      fi
+      IFS= read -r DOMAIN < /dev/tty
+      [ -z "$DOMAIN" ] && [ -n "$CURRENT_URL" ] && DOMAIN="$CURRENT_URL"
+    else
+      printf '%s\n' "OPENOPS_DOMAIN is not set" >&2
+      exit 1
+    fi
+  fi
   echo "Fully qualified domain name: $DOMAIN"
-  [ -z "${EMAIL}" ] && { [ "$INTERACTIVE" = "true" ] || { printf '%s\n' "OPENOPS_EMAIL is not set" >&2; exit 1; }; printf 'Enter your email for certificate related notifications: '; IFS= read -r EMAIL < /dev/tty ; }
+
+  if [ -z "${EMAIL}" ]; then
+    if [ "$INTERACTIVE" = "true" ]; then
+      printf 'Enter your email for certificate related notifications [noreply@example.com]: '
+      IFS= read -r EMAIL < /dev/tty
+      [ -z "$EMAIL" ] && EMAIL="noreply@example.com"
+    else
+      printf '%s\n' "OPENOPS_EMAIL is not set" >&2
+      exit 1
+    fi
+  fi
   echo "Email: $EMAIL"
   check_for_user_confirmation
 
