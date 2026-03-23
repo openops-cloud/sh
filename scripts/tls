@@ -43,8 +43,12 @@ EOF
       IFS= read -r DOMAIN < /dev/tty
       [ -z "$DOMAIN" ] && [ -n "$CURRENT_URL" ] && DOMAIN="$CURRENT_URL"
     else
-      printf '%s\n' "OPENOPS_DOMAIN is not set" >&2
-      exit 1
+      if [ -n "$CURRENT_URL" ]; then
+        DOMAIN="$CURRENT_URL"
+      else
+        printf '%s\n' "OPENOPS_DOMAIN is not set and no existing domain found in configuration" >&2
+        exit 1
+      fi
     fi
   fi
   echo "Fully qualified domain name: $DOMAIN"
@@ -55,8 +59,7 @@ EOF
       IFS= read -r EMAIL < /dev/tty
       [ -z "$EMAIL" ] && EMAIL="noreply@example.com"
     else
-      printf '%s\n' "OPENOPS_EMAIL is not set" >&2
-      exit 1
+      EMAIL="noreply@example.com"
     fi
   fi
   echo "Email: $EMAIL"
